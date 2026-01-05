@@ -1,330 +1,433 @@
+"""
+The key registration works correctly only when the English keyboard layout
+is enabled at the moment the program is launched.
+Using two different keyboard libraries for two reasons:
+1. "keyboard" can suppress hotkeys from another applications
+2. "pynput.keyboard" can assign suppressed "shift" to hotkeys in this app
+"""
+
 import time
-import keyboard
-from pynput import mouse
+import atexit
 from itertools import combinations
+from typing import Any, Callable, Dict
+
+import keyboard
+from pynput.keyboard import Controller as KeyboardController
+from pynput.keyboard import Key as KeyboardButton
+from pynput.mouse import Button as MouseButton
+from pynput.mouse import Controller as MouseController
 
 
-class MouseKeyController:
-    def __init__(self, config):
-        self.config = config
-        self.mouse_controller = mouse.Controller()
-        self.is_running = True
-        self.current_movement = {'dx': 0, 'dy': 0}
-        
-        # Состояние кнопок мыши (зажаты или нет)
-        self.mouse_button_states = {}
-        for action_key in self.config['mouse_button_actions'].keys():
+class MyController:
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        mouse_controller: MouseController,
+    ):
+        """Initializes all assigned keys, suppressed keys
+        and starting conditions
+
+        Args:
+            config (Dict[str, Any]): dict with parameters and hotkeys
+            mouse_controller (MouseController): object for processing
+                mouse imitation
+        """
+        self.mouse_controller: MouseController = mouse_controller
+        self.config: Dict[str, Any] = config
+        self.is_running: bool = True
+        self.current_movement: Dict[str, int] = {"dx": 0, "dy": 0}
+        self.mouse_button_states: Dict[str, bool] = {}
+        for action_key in self.config["mouse_button_actions"].keys():
             self.mouse_button_states[action_key] = False
-            
-        self._setup_hotkeys()
 
-    def _setup_hotkeys(self):
-        """Регистрирует все горячие клавиши."""
-        # Регистрируем клавишу выхода
-        keyboard.add_hotkey(
-            self.config['exit_key'], 
-            self.stop, 
-            suppress=True
+        move_keys = list(self.config["mouse_move_keys"].keys())
+        mouse_button_keys = list(self.config["mouse_button_actions"].keys())
+        activation_key: str = self.config["activation_key"]
+        activation_arrow_key_name: str = self.config["activation_arrow_key"]
+        shift_arrow_imitation_name: str = self.config["shift_arrow_imitation"]
+        turbo_key: str = self.config["turbo_key"]
+        slow_key: str = self.config["slow_key"]
+
+        self._register_hotkey([self.config["exit_key"]], self.stop)
+
+        self._register_action_hotkeys(
+            self.config["one_shot_actions"], activation_key
         )
 
-        activation_key_name = self.config['activation_key']
-        activation_arrow_key_name = self.config['activation_arrow_key']
-        
-        # Регистрируем одноразовые действия (не кнопки мыши)
-        for key_name, action_func in self.config['one_shot_actions'].items():
-            hotkey_string = f"{activation_key_name}+{key_name}"
-            keyboard.add_hotkey(hotkey_string, action_func, suppress=True)
-            print(f"Зарегистрирован хоткей: {hotkey_string}")
+        self._register_action_hotkeys(
+            self.config["one_shot_arrows"], activation_arrow_key_name
+        )
 
-        # Регистрируем стрелки (не кнопки мыши)
-        for key_name, action_func in self.config['one_shot_arrows'].items():
-            hotkey_string = f"{activation_arrow_key_name}+{key_name}"
-            keyboard.add_hotkey(hotkey_string, action_func, suppress=True)
-            print(f"Зарегистрирован хоткей: {hotkey_string}")
+        self._register_action_hotkeys(
+            self.config["one_shot_arrows_shift"],
+            [activation_arrow_key_name, shift_arrow_imitation_name],
+        )
 
-        arrow_keys = list(self.config['one_shot_arrows'].keys())
+        self._register_hotkey(
+            [activation_arrow_key_name, shift_arrow_imitation_name]
+        )
+
+        self._register_arrow_combinations(
+            self.config["one_shot_arrows"], activation_arrow_key_name
+        )
+
+        self._register_arrow_combinations(
+            self.config["one_shot_arrows_shift"],
+            [activation_arrow_key_name, shift_arrow_imitation_name],
+        )
+
+        for key_name in mouse_button_keys:
+            self._register_hotkey([activation_key, key_name])
+
+        self._register_movement_combinations(
+            move_keys, mouse_button_keys, activation_key, turbo_key, slow_key
+        )
+
+        self._register_triple_movement_combinations(
+            move_keys, activation_key, turbo_key, slow_key
+        )
+
+        print(
+            """The key registration works correctly only when the English \n
+            keyboard layout is enabled at the moment the program is launched"""
+        )
+
+        atexit.register(self._cleanup)
+
+    def _register_hotkey(
+        self,
+        keys: str | list[str],
+        action_func: Callable = lambda: None,
+        suppress: bool = True,
+    ) -> str:
+        """Main function for forming name of full combination and
+        registering it with "keyboard" library
+
+        Args:
+            keys (str | list[str]): buttons names.
+            action_func (Callable, optional): callable function by this keys
+                combination. Defaults to lambda: None.
+            suppress (bool, optional): evading sending hotkeys to other
+                applications. Defaults to True.
+
+        Returns:
+            str: full name of registered combination
+        """
+        if isinstance(keys, str):
+            keys = [keys]
+
+        hotkey = "+".join(keys)
+
+        keyboard.add_hotkey(hotkey, action_func, suppress=suppress)
+
+        print(f"Hotkey registered: {hotkey}")
+        return hotkey
+
+    def _register_action_hotkeys(self, actions, activation_keys):
+
+        if isinstance(activation_keys, str):
+            activation_keys = [activation_keys]
+
+        for key_name, action_func in actions.items():
+            self._register_hotkey([*activation_keys, key_name], action_func)
+
+    def _register_arrow_combinations(self, arrows, activation_keys):
+
+        if isinstance(activation_keys, str):
+            activation_keys = [activation_keys]
+
+        arrow_keys = list(arrows.keys())
         for key1, key2 in combinations(arrow_keys, 2):
-            hotkey = f"{activation_arrow_key_name}+{key1}+{key2}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
+            self._register_hotkey([*activation_keys, key1, key2])
 
-        # Регистрируем хоткеи для кнопок мыши (только для подавления)
-        for key_name in self.config['mouse_button_actions'].keys():
-            hotkey_string = f"{activation_key_name}+{key_name}"
-            keyboard.add_hotkey(hotkey_string, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей кнопки мыши: {hotkey_string}")
+    def _register_movement_combinations(
+        self, move_keys, mouse_button_keys, activation_key, turbo_key, slow_key
+    ):
 
-        # Получаем все клавиши движения
-        move_keys = list(self.config['mouse_move_keys'].keys())
-        mouse_button_keys = list(self.config['mouse_button_actions'].keys())
-        turbo_key = self.config['turbo_key']
-        slow_key = self.config['slow_key']
-        
-        # Регистрируем все возможные комбинации
-        self._register_all_combinations(activation_key_name, move_keys, mouse_button_keys, turbo_key, slow_key)
+        modifiers = [[], [turbo_key], [slow_key]]
 
-    def _register_all_combinations(self, activation_key, move_keys, mouse_button_keys, turbo_key, slow_key):
-        """Регистрирует все возможные комбинации клавиш."""
-        
-        # Регистрируем одиночные клавиши движения
         for key in move_keys:
-            hotkey = f"{activation_key}+{key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key}+{turbo_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key}+{slow_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            # Комбинации движения с кнопками мыши
+            for modifier in modifiers:
+                self._register_hotkey([activation_key, key, *modifier])
+
             for mouse_key in mouse_button_keys:
-                hotkey = f"{activation_key}+{key}+{mouse_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key}+{mouse_key}+{turbo_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key}+{mouse_key}+{slow_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
-        
-        # Регистрируем парные комбинации движения (диагонали)
+                for modifier in modifiers:
+                    self._register_hotkey(
+                        [activation_key, key, mouse_key, *modifier]
+                    )
+
         for key1, key2 in combinations(move_keys, 2):
-            hotkey = f"{activation_key}+{key1}+{key2}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key1}+{key2}+{turbo_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key1}+{key2}+{slow_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            # Комбинации диагонального движения с кнопками мыши
+            for modifier in modifiers:
+                self._register_hotkey([activation_key, key1, key2, *modifier])
+
             for mouse_key in mouse_button_keys:
-                hotkey = f"{activation_key}+{key1}+{key2}+{mouse_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key1}+{key2}+{mouse_key}+{turbo_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key1}+{key2}+{mouse_key}+{slow_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей: {hotkey}")
+                for modifier in modifiers:
+                    self._register_hotkey(
+                        [activation_key, key1, key2, mouse_key, *modifier]
+                    )
 
-        # Регистрируем комбинации только кнопок мыши с модификаторами
         for mouse_key in mouse_button_keys:
-            hotkey = f"{activation_key}+{mouse_key}+{turbo_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей: {hotkey}")
-            
-            hotkey = f"{activation_key}+{mouse_key}+{slow_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей: {hotkey}")
+            for modifier in [turbo_key, slow_key]:
+                self._register_hotkey([activation_key, mouse_key, modifier])
 
-        # Регистрируем тройные комбинации движения
+    def _register_triple_movement_combinations(
+        self, move_keys, activation_key, turbo_key, slow_key
+    ):
+
+        modifiers = [[], [turbo_key], [slow_key]]
+
         for key1, key2, key3 in combinations(move_keys, 3):
-            hotkey = f"{activation_key}+{key1}+{key2}+{key3}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key1}+{key2}+{key3}+{turbo_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-            
-            hotkey = f"{activation_key}+{key1}+{key2}+{key3}+{slow_key}"
-            keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-            print(f"Зарегистрирован хоткей движения: {hotkey}")
-        
-        # И четверные комбинации движения (все клавиши одновременно)
-        if len(move_keys) >= 4:
-            for key1, key2, key3, key4 in combinations(move_keys, 4):
-                hotkey = f"{activation_key}+{key1}+{key2}+{key3}+{key4}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей движения: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key1}+{key2}+{key3}+{key4}+{turbo_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей движения: {hotkey}")
-                
-                hotkey = f"{activation_key}+{key1}+{key2}+{key3}+{key4}+{slow_key}"
-                keyboard.add_hotkey(hotkey, lambda: None, suppress=True)
-                print(f"Зарегистрирован хоткей движения: {hotkey}")
+            for modifier in modifiers:
+                self._register_hotkey(
+                    [activation_key, key1, key2, key3, *modifier]
+                )
 
     def _process_mouse_buttons(self):
-        """Обрабатывает состояние кнопок мыши (зажатие/отжатие)."""
-        # Если Ctrl не зажат, отжимаем все кнопки мыши
-        if not keyboard.is_pressed(self.config['activation_key']):
-            for action_key, button_info in self.config['mouse_button_actions'].items():
+        """Imitates mouse buttons clicks"""
+        if not keyboard.is_pressed(self.config["activation_key"]):
+            for action_key, button_info in self.config[
+                "mouse_button_actions"
+            ].items():
                 if self.mouse_button_states[action_key]:
                     self.mouse_button_states[action_key] = False
-                    self.mouse_controller.release(button_info['button'])
-                    print(f"Отжата кнопка: {button_info['name']}")
+                    self.mouse_controller.release(button_info["button"])
+                    print(f"Button released: {button_info['name']}")
+                    print(f"mouse_button_states {self.mouse_button_states}")
             return
 
-        # Проверяем каждую кнопку мыши
-        for action_key, button_info in self.config['mouse_button_actions'].items():
+        for action_key, button_info in self.config[
+            "mouse_button_actions"
+        ].items():
             should_be_pressed = keyboard.is_pressed(action_key)
             currently_pressed = self.mouse_button_states[action_key]
-            
+
             if should_be_pressed and not currently_pressed:
-                # Нужно зажать кнопку
                 self.mouse_button_states[action_key] = True
-                self.mouse_controller.press(button_info['button'])
-                print(f"Зажата кнопка: {button_info['name']}")
-                
+                self.mouse_controller.press(button_info["button"])
+                print(f"Button pressed: {button_info['name']}")
+                print(f"mouse_button_states {self.mouse_button_states}")
+
             elif not should_be_pressed and currently_pressed:
-                # Нужно отжать кнопку
                 self.mouse_button_states[action_key] = False
-                self.mouse_controller.release(button_info['button'])
-                print(f"Отжата кнопка: {button_info['name']}")
+                self.mouse_controller.release(button_info["button"])
+                print(f"Button released: {button_info['name']}")
+                print(f"mouse_button_states {self.mouse_button_states}")
 
     def _process_continuous_actions(self):
-        """Обрабатывает продолжительные действия (движение мыши)."""
-        
-        # Если Ctrl не зажат, ничего не делаем
-        if not keyboard.is_pressed(self.config['activation_key']):
+        """Imitates mouse movement"""
+        if not keyboard.is_pressed(self.config["activation_key"]):
             return
 
-        # Пересчитываем текущее движение на основе нажатых клавиш
         dx, dy = 0, 0
-        for key_name, (step_x, step_y) in self.config['mouse_move_keys'].items():
+        for key_name, (step_x, step_y) in self.config[
+            "mouse_move_keys"
+        ].items():
             if keyboard.is_pressed(key_name):
                 dx += step_x
                 dy += step_y
 
         if dx != 0 or dy != 0:
-            is_turbo_mode = keyboard.is_pressed(self.config['turbo_key'])
-            is_slow_mode = keyboard.is_pressed(self.config['slow_key'])
-            
-            speed = self.config['move_pixels']
+            is_turbo_mode = keyboard.is_pressed(self.config["turbo_key"])
+            is_slow_mode = keyboard.is_pressed(self.config["slow_key"])
+
+            speed = self.config["move_pixels"]
             if is_turbo_mode:
-                speed *= self.config['turbo_multiplier']
+                speed *= self.config["turbo_multiplier"]
             if is_slow_mode:
-                speed /= self.config['slow_divisor']
-            
+                speed /= self.config["slow_divisor"]
+
             self.mouse_controller.move(int(dx * speed), int(dy * speed))
 
-    def stop(self):
-        print("Клавиша выхода нажата. Завершение работы...")
-        # Отжимаем все кнопки мыши перед выходом
-        for action_key, button_info in self.config['mouse_button_actions'].items():
-            if self.mouse_button_states[action_key]:
-                self.mouse_controller.release(button_info['button'])
-                print(f"Отжата кнопка при выходе: {button_info['name']}")
-        self.is_running = False
+    def _cleanup(self):
+        print("Cleanup...")
 
-    def run(self):
-        print("="*60)
-        print("Контроллер мыши активен.")
-        print("Левый CTRL для активации функций движения и клика")
-        print(f"-> Движение: I, J, K, L (только с зажатым Ctrl)")
-        print(f"-> ВЫХОД: {self.config['exit_key'].upper()} (работает всегда)")
-        print("="*60)
+        for action_key, button_info in self.config[
+            "mouse_button_actions"
+        ].items():
+            if self.mouse_button_states.get(action_key, False):
+                self.mouse_controller.release(button_info["button"])
+                self.mouse_button_states[action_key] = False
 
         try:
-            while self.is_running:
-                self._process_mouse_buttons() 
-                self._process_continuous_actions()  # Обрабатываем движение
-                time.sleep(self.config['loop_delay'])
-        finally:
-            # Отжимаем все кнопки мыши при завершении
-            for action_key, button_info in self.config['mouse_button_actions'].items():
-                if self.mouse_button_states[action_key]:
-                    self.mouse_controller.release(button_info['button'])
             keyboard.unhook_all()
-            print("Программа завершена.")
+        except Exception:
+            pass
+
+        print("✓ Cleanup completed")
+
+    def stop(self):
+        """Stops controller"""
+        print("Stop...")
+        self.is_running = False
+        self._cleanup()
+
+    def run(self):
+        """
+        Main controller cycle, that processes all keys while program
+        running and releases them on exit.
+        """
+        try:
+            print("Started. Press HOME for exit.")
+            while self.is_running:
+                self._process_mouse_buttons()
+                self._process_continuous_actions()
+                time.sleep(self.config["loop_delay"])
+
+        except KeyboardInterrupt:
+            print("\nKeyboardInterrupt")
+            self.stop()
+
+        except Exception as e:
+            print(f"\n❌ Main cycle error: {e}")
+            import traceback
+
+            traceback.print_exc()
+            self.stop()
+
+        finally:
+            self._cleanup()
+
 
 def setup_configuration():
     def perform_backspace():
-        print("backspace (действие выполнено)")
-        keyboard.press_and_release('backspace')
+        print("backspace (press_and_release)")
+        keyboard.press_and_release("backspace")
 
     def perform_enter():
-        print("enter (действие выполнено)")
-        keyboard.press_and_release('enter')
+        print("enter (press_and_release)")
+        keyboard.press_and_release("enter")
+
+    def perform_commenting():
+        print("ctrl+/ (press_and_release)")
+        with keyboard_controller.pressed(KeyboardButton.ctrl_r):
+            keyboard_controller.press("/")
+            keyboard_controller.release("/")
 
     def perform_scrollup():
-        print("Скролл вверх (действие выполнено)")
-        mouse.Controller().scroll(0, 5)
-    
+        print(f"scrollup ({config['scroll_units']} units)")
+        mouse_controller.scroll(0, dy=config["scroll_units"])
+
     def perform_scrolldown():
-        print("Скролл вниз (действие выполнено)")
-        mouse.Controller().scroll(0, -5)
+        print(f"scrolldown ({config['scroll_units']} units)")
+        mouse_controller.scroll(0, dy=-config["scroll_units"])
 
     def perform_up():
-        print("up (действие выполнено)")
-        keyboard.press_and_release('up')
+        print("up (press_and_release)")
+        keyboard.press_and_release("up")
+        keyboard.press_and_release(config["activation_arrow_key"])
 
     def perform_down():
-        print("down (действие выполнено)")
-        keyboard.press_and_release('down')
+        print("down (press_and_release)")
+        keyboard.press_and_release("down")
+        keyboard.press_and_release(config["activation_arrow_key"])
 
     def perform_left():
-        print("left (действие выполнено)")
-        keyboard.press_and_release('left')
+        print("left (press_and_release)")
+        keyboard.press_and_release("left")
+        keyboard.press_and_release(config["activation_arrow_key"])
 
     def perform_right():
-        print("right (действие выполнено)")
-        keyboard.press_and_release('right')
+        print("right (press_and_release)")
+        keyboard.press_and_release("right")
+        keyboard.press_and_release(config["activation_arrow_key"])
 
     def perform_end():
-        print("end (действие выполнено)")
-        keyboard.press_and_release('end')
+        print("end (press_and_release)")
+        keyboard.press_and_release("end")
+
+    def perform_down_shift():
+        print("down+shift (press_and_release)")
+        with keyboard_controller.pressed(KeyboardButton.shift_r):
+            keyboard_controller.press(KeyboardButton.down)
+            keyboard_controller.release(KeyboardButton.down)
+
+    def perform_left_shift():
+        print("left+shift (press_and_release)")
+        with keyboard_controller.pressed(KeyboardButton.shift_r):
+            keyboard_controller.press(KeyboardButton.left)
+            keyboard_controller.release(KeyboardButton.left)
+
+    def perform_right_shift():
+        print("right+shift (press_and_release)")
+        with keyboard_controller.pressed(KeyboardButton.shift_r):
+            keyboard_controller.press(KeyboardButton.right)
+            keyboard_controller.release(KeyboardButton.right)
+
+    def perform_up_shift():
+        print("up+shift (press_and_release)")
+        with keyboard_controller.pressed(KeyboardButton.shift_r):
+            keyboard_controller.press(KeyboardButton.up)
+            keyboard_controller.release(KeyboardButton.up)
 
     config = {
-        'activation_key': 'left ctrl',
-        'activation_arrow_key': 'left alt',
-        'turbo_key': 'space',
-        'slow_key': 'left alt',
-        'exit_key': 'home',
-        'move_pixels': 5,
-        'turbo_multiplier': 7,
-        'slow_divisor': 2,
-        'mouse_move_keys': {
-            'i': (0, -1), 
-            'k': (0, 1), 
-            'j': (-1, 0), 
-            'l': (1, 0),
+        "activation_key": "left ctrl",
+        "activation_arrow_key": "left shift",
+        "shift_arrow_imitation": "space",
+        "turbo_key": "space",
+        "slow_key": "left alt",
+        "exit_key": "home",
+        "move_pixels": 5,
+        "turbo_multiplier": 7,
+        "slow_divisor": 2,
+        "scroll_units": 2,
+        "mouse_move_keys": {
+            "i": (0, -1),
+            "k": (0, 1),
+            "j": (-1, 0),
+            "l": (1, 0),
         },
-        # Кнопки мыши, которые можно зажимать/отжимать
-        'mouse_button_actions': {
-            ';': {'name': 'левая кнопка мыши', 'button': mouse.Button.left},
-            "'": {'name': 'правая кнопка мыши', 'button': mouse.Button.right},
-            'u': {'name': 'средняя кнопка мыши', 'button': mouse.Button.middle},
+        "mouse_button_actions": {
+            "semicolon": {"name": "lmb", "button": MouseButton.left},
+            "'": {"name": "rmb", "button": MouseButton.right},
+            "slash": {"name": "mmb", "button": MouseButton.middle},
         },
-        # Одноразовые действия (не кнопки мыши)
-        'one_shot_actions': {
-            'n': perform_scrollup,
-            'm': perform_scrolldown,
-            'h': perform_backspace,
-            ".": perform_enter,
+        "one_shot_actions": {
+            "n": perform_scrollup,
+            "m": perform_scrolldown,
+            "h": perform_backspace,
+            "u": perform_enter,
             "o": perform_end,
+            "p": perform_commenting,
         },
-        'one_shot_arrows': {
-            'i': perform_up,
-            'k': perform_down,
-            'j': perform_left,
-            "l": perform_right,
+        "one_shot_arrows": {
+            "e": perform_up,
+            "d": perform_down,
+            "s": perform_left,
+            "f": perform_right,
         },
-        'loop_delay': 0.01 
+        "one_shot_arrows_shift": {
+            "e": perform_up_shift,
+            "d": perform_down_shift,
+            "s": perform_left_shift,
+            "f": perform_right_shift,
+        },
+        "loop_delay": 0.01,
     }
     return config
 
+
 if __name__ == "__main__":
+    controller = None
     try:
+        keyboard_controller = KeyboardController()
+        mouse_controller = MouseController()
         configuration = setup_configuration()
-        controller = MouseKeyController(configuration)
+        controller = MyController(configuration, mouse_controller)
+
         controller.run()
+
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt")
+        if controller:
+            controller.stop()
+
     except Exception as e:
-        print(f"\n[ОШИБКА]: {e}")
+        print(f"\n❌ CRITICAL ERROR: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if controller:
+            controller.stop()
+
+    finally:
+        print("\nExit...")
