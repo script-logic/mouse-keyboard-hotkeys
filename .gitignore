@@ -1,1 +1,4 @@
-.env
+keyboard_mouse_controller.egg-info
+.venv
+.mypy_cache
+__pycache__/

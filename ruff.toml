@@ -1,0 +1,83 @@
+target-version = "py314"
+line-length = 79
+indent-width = 4
+exclude = ["__pycache__/", ".git/", "*.pyc", ".venv"]
+preview = true
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+exclude = ["*.pyi"]
+preview = true
+
+[lint]
+task-tags = ["TODO"]
+select = ["ALL", "ANN", "I"]
+fixable = ["ALL", "ANN", "I"]
+ignore = [
+    "COM812",
+    "TC001",
+    "TC002",
+    "TC003",
+    "TC006",
+    "RUF029",
+    "RUF003",
+    "RUF002",
+    "RUF001",
+    "CPY001",
+    "B008",
+    "D100",
+    "D104",
+    "D103",
+    "D101",
+    "D102",
+    "D107",
+    "D205",
+    "ANN204",
+    "DOC402",
+    "DOC501",
+    "DOC201",
+]
+preview = true
+exclude = ["alembic", ]
+
+[lint.flake8-quotes]
+docstring-quotes = "double"
+
+[lint.isort]
+known-first-party = ["."]
+
+[lint.pydocstyle]
+convention = "google"
+ignore-decorators = ["typing.overload"]
+ignore-var-parameters = true
+
+[lint.per-file-ignores]
+"tests/**/*" = [
+    "ANN",
+    "S101",
+    "ARG",
+    "FBT",
+    "RUF003",
+    "PLR2004",
+    "SLF001",
+    "PLC0415",
+    "F403",
+    "BLE001",
+    "TRY301",
+    "T201",
+]
+"alembic/**/*" = ["ANN"]
+
+[lint.pycodestyle]
+ignore-overlong-task-comments = true
+max-doc-length = 79
+max-line-length = 79
+
+[lint.pylint]
+allow-dunder-method-names = ["__tablename__", "__table_args__"]
+max-args = 10

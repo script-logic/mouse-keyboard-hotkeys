@@ -1,22 +1,17 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "keyboard-mouse-controller"
+name = "my-hotkeys-config"
 version = "1.0.1"
 description = "Advanced keyboard and mouse controller with hotkey support"
+requires-python = ">=3.14"
 readme = "README.md"
-license = {text = "MIT"}
-requires-python = ">=3.10"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "keyboard>=0.13.5",
     "pynput>=1.8.1",
-]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
 ]
 
 [project.optional-dependencies]
@@ -27,14 +22,15 @@ dev = [
     "isort>=5.13.2",
 ]
 
-[tool.black]
-line-length = 79
-target-version = ['py38']
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-
-
 [project.urls]
 Repository = "https://github.com/script-logic/keyboard-mouse-controller"
+
+[build-system]
+requires = ["uv_build>=0.10.8,<=0.11.1"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.13",
+    "ty>=0.0.37",
+]

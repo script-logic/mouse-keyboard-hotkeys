@@ -1,0 +1,20 @@
+[environment]
+python-platform = "all"
+python-version = "3.14"
+root = ["."]
+
+[src]
+include = ["."]
+exclude = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/build/**",
+    "**/alembic/**",
+]
+
+[rules]
+all = "error"
+
+[terminal]
+error-on-warning = true
+output-format = "full"
