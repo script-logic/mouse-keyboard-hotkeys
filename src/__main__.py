@@ -148,8 +148,8 @@ class MouseMoveActions(Enum):
 
 class MouseButtonActions(Enum):
     mouse_click_left = MouseButton.left
-    mouse_click_middle = MouseButton.right
-    mouse_click_right = MouseButton.middle
+    mouse_click_middle = MouseButton.middle
+    mouse_click_right = MouseButton.right
 
 
 ONE_SHOT_ACTIONS = {
@@ -323,17 +323,17 @@ class HooksRegistry:
 
 
 def cleanup(tries: int = 0) -> None:
+    global is_running  # noqa: PLW0603
     tries += 1
     log.info("Cleanup...")
     try:
-        keyboard.unhook_all_hotkeys()
         keyboard.unhook_all()
 
         for mouse_button in mouse_button_pressed.copy():
             mouse_controller.release(mouse_button)
             mouse_button_pressed.remove(mouse_button)
 
-    except BaseException:
+    except Exception:
         log.exception("X Cleanup error, try: %s", tries)
         if tries < Config.tries.value:
             cleanup(tries)
@@ -342,7 +342,7 @@ def cleanup(tries: int = 0) -> None:
     log.info("mouse_button_pressed: %s", mouse_button_pressed)
     log.info("✓ Cleanup completed")
     log.info("Exit...")
-    sys.exit(1)
+    is_running = False
 
 
 def process_mouse_buttons() -> None:
@@ -392,29 +392,38 @@ mouse_controller: MouseController = MouseController()
 is_running: bool = True
 current_movement: dict[str, int] = {"dx": 0, "dy": 0}
 mouse_button_pressed: set[MouseButton] = set()
-default_speed = Config.move_pixels_at_once.value
+default_speed: int = Config.move_pixels_at_once.value
 mouse_move_actions: tuple[str, ...] = tuple(x.name for x in MouseMoveActions)
+slow_speed = int(Config.move_pixels_at_once.value / Config.slow_divisor.value)
+HooksRegistry()
+loop_delay: float = Config.loop_delay.value
+activation_key: str = Keys.activation_key
+turbo_key: str = Keys.turbo_key
+slow_key: str = Keys.slow_key
 mouse_buttons: tuple[MouseButton, ...] = tuple(
     x.value for x in MouseButtonActions
 )
 turbo_speed = int(
     Config.move_pixels_at_once.value * Config.turbo_multiplier.value
 )
-slow_speed = int(Config.move_pixels_at_once.value / Config.slow_divisor.value)
-HooksRegistry()
-loop_delay = Config.loop_delay.value
-activation_key = Keys.activation_key
-turbo_key = Keys.turbo_key
-slow_key = Keys.slow_key
 try:
     while is_running:
         process_mouse_buttons()
+
         if keyboard.is_pressed(activation_key):
             process_continuous_actions()
+
         time.sleep(loop_delay)
 
-except BaseException:
-    log.exception("BaseException")
+    log.info("Program terminated normally")
+    sys.exit(0)
 
-finally:
+except KeyboardInterrupt:
+    log.info("KeyboardInterrupt received")
     cleanup()
+    sys.exit(0)
+
+except Exception:
+    log.exception("Unexpected exception")
+    cleanup()
+    sys.exit(1)
