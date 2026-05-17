@@ -191,9 +191,9 @@ class HooksRegistry:
             self.register_hotkey([Keys.activation_key, Keys[key.name]])
 
     @staticmethod
-    def register_hotkey[T: bool | None](
+    def register_hotkey(
         keys: list[str],
-        action_func: Callable[..., T] = lambda: None,
+        action_func: Callable[..., bool | None] = lambda: None,
         *,
         suppress: bool = True,
     ) -> None:
